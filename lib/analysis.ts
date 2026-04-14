@@ -7,6 +7,118 @@ function normalize(text: string) {
     .trim();
 }
 
+function evaluateExpression(expression: string) {
+  const cleaned = expression.replace(/\s+/g, '');
+  if (!/^[0-9+\-*/^().]+$/.test(cleaned)) {
+    throw new Error('Invalid expression');
+  }
+
+  const safeExpr = cleaned.replace(/\^/g, '**');
+  // eslint-disable-next-line no-new-func
+  const result = new Function(`return ${safeExpr}`)();
+
+  if (typeof result !== 'number' || Number.isNaN(result)) {
+    throw new Error('Unable to evaluate expression');
+  }
+
+  return result;
+}
+
+function extractMathSegment(prompt: string) {
+  let text = prompt.trim();
+
+  text = text.replace(/explain.*$/i, '');
+  text = text.replace(/steps.*$/i, '');
+  text = text.replace(/answer.*$/i, '');
+  text = text.replace(/^please\s+/i, '');
+  text = text.replace(/\?$/, '');
+
+  const solveForMatch = text.match(/solve\s+for\s+[a-z]\s*:\s*(.+)$/i);
+  if (solveForMatch?.[1]) return solveForMatch[1].trim();
+
+  const findIfMatch = text.match(/find\s+[a-z]\s+(?:if|when|given)\s+(.+)$/i);
+  if (findIfMatch?.[1]) return findIfMatch[1].trim();
+
+  const whatIsMatch = text.match(/what\s+is\s+(.+)$/i);
+  if (whatIsMatch?.[1]) return whatIsMatch[1].trim();
+
+  const calculateMatch = text.match(/calculate\s+(.+)$/i);
+  if (calculateMatch?.[1]) return calculateMatch[1].trim();
+
+  const equationMatch = text.match(/([0-9()+\-*/^\.\s]+=[0-9()+\-*/^\.\s]+)/);
+  if (equationMatch?.[1]) return equationMatch[1].trim();
+
+  const explicitValueMatch = text.match(/=[\s]*([+-]?\d*\.?\d+)$/);
+  if (explicitValueMatch?.[1]) return explicitValueMatch[1].trim();
+
+  return text;
+}
+
+function solveLinearEquation(prompt: string) {
+  const cleaned = prompt.replace(/\s+/g, '');
+  const linearMatch = cleaned.match(/^([+-]?\d*)([a-z])([+-]?\d*)=([+-]?\d+)$/i);
+  if (!linearMatch) return null;
+
+  let [, coef, variable, constant, result] = linearMatch;
+  if (!coef || coef === '+') coef = '1';
+  if (coef === '-') coef = '-1';
+
+  const a = Number(coef);
+  const b = Number(constant || '0');
+  const c = Number(result);
+
+  if (Number.isNaN(a) || Number.isNaN(b) || Number.isNaN(c) || a === 0) return null;
+  return (c - b) / a;
+}
+
+export function parseCorrectAnswer(prompt: string) {
+  const trimmed = extractMathSegment(prompt);
+  const equalsIndex = trimmed.indexOf('=');
+
+  if (equalsIndex !== -1) {
+    const left = trimmed.slice(0, equalsIndex).trim();
+    const right = trimmed.slice(equalsIndex + 1).trim();
+
+    if (right === '' || /\?$/.test(right)) {
+      try {
+        return String(evaluateExpression(left));
+      } catch {
+        return null;
+      }
+    }
+
+    const linear = solveLinearEquation(trimmed);
+    if (linear !== null) {
+      return String(linear);
+    }
+
+    const leftValue = /^[0-9()+\-*/^\.\s]+$/.test(left);
+    const rightValue = /^[0-9()+\-*/^\.\s]+$/.test(right);
+    if (leftValue && rightValue) {
+      try {
+        const leftEval = evaluateExpression(left);
+        const rightEval = evaluateExpression(right);
+        if (!Number.isNaN(leftEval) && !Number.isNaN(rightEval)) {
+          return String(leftEval === rightEval ? leftEval : rightEval);
+        }
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  const mathMatch = trimmed.match(/([0-9()+\-*/^\.]+)\s*$/);
+  if (mathMatch && mathMatch[1]) {
+    try {
+      return String(evaluateExpression(mathMatch[1]));
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
 // ✅ Math-aware tokenization
 function mathTokens(text: string) {
   return normalize(text)
