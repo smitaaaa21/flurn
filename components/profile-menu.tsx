@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { ChevronDown, LogOut, User } from 'lucide-react';
@@ -35,10 +36,13 @@ export function ProfileMenu() {
       </button>
     );
   }
+  const router = useRouter();
 
   const signOut = async () => {
     if (!supabase) return;
     await supabase.auth.signOut();
+    router.push('/auth');
+    router.refresh();
   };
 
   return (
